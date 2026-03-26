@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; }
+    html, body {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      background: transparent;
+      pointer-events: none;
+    }
+
+    /* Red border */
+    .border { position: fixed; background: red; pointer-events: none; }
+    .border-top, .border-bottom { height: 3px; }
+    .border-left, .border-right { width: 3px; }
+
+    /* Corner handles - modern L-shaped design */
+    .handle {
+      position: fixed;
+      width: 24px;
+      height: 24px;
+      z-index: 10;
+      pointer-events: auto !important;
+    }
+    .handle::before, .handle::after {
+      content: '';
+      position: absolute;
+      background: white;
+      border-radius: 1px;
+      box-shadow: 0 0 3px rgba(0,0,0,0.4);
+    }
+    /* Top-left */
+    .handle-tl { cursor: nw-resize; }
+    .handle-tl::before { top: 0; left: 0; width: 16px; height: 4px; }
+    .handle-tl::after  { top: 0; left: 0; width: 4px; height: 16px; }
+    /* Top-right */
+    .handle-tr { cursor: ne-resize; }
+    .handle-tr::before { top: 0; right: 0; width: 16px; height: 4px; }
+    .handle-tr::after  { top: 0; right: 0; width: 4px; height: 16px; }
+    /* Bottom-left */
+    .handle-bl { cursor: sw-resize; }
+    .handle-bl::before { bottom: 0; left: 0; width: 16px; height: 4px; }
+    .handle-bl::after  { bottom: 0; left: 0; width: 4px; height: 16px; }
+    /* Bottom-right */
+    .handle-br { cursor: se-resize; }
+    .handle-br::before { bottom: 0; right: 0; width: 16px; height: 4px; }
+    .handle-br::after  { bottom: 0; right: 0; width: 4px; height: 16px; }
+
+    /* Control panel */
+    #ctrl-panel {
+      position: fixed;
+      background: rgba(30, 30, 30, 0.92);
+      border-radius: 6px;
+      padding: 5px 10px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      z-index: 20;
+      cursor: default;
+      backdrop-filter: blur(8px);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      pointer-events: auto !important;
+    }
+
+    .dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: red;
+      box-shadow: 0 0 6px rgba(255,0,0,0.6);
+      animation: blink 1.6s infinite;
+    }
+    .dot.paused {
+      background: #ffaa00;
+      box-shadow: 0 0 6px rgba(255,170,0,0.6);
+      animation: none;
+    }
+
+    @keyframes blink {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.15; }
+    }
+
+    #ctrl-panel span {
+      color: white;
+      font-family: 'Meiryo UI', sans-serif;
+      font-size: 11px;
+      font-weight: bold;
+    }
+
+    #ctrl-panel button {
+      padding: 3px 10px;
+      font-size: 10px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-family: 'Meiryo UI', sans-serif;
+      transition: background 0.15s;
+    }
+
+    #btn-pause { background: #555; color: white; }
+    #btn-pause:hover { background: #777; }
+    #btn-pause.resumed { background: #282; }
+    #btn-pause.resumed:hover { background: #3a3; }
+    #btn-stop { background: #c33; color: white; }
+    #btn-stop:hover { background: #e55; }
+
+    /* Flash overlay */
+    #flash {
+      position: fixed;
+      background: white;
+      opacity: 0.5;
+      display: none;
+      pointer-events: none;
+      z-index: 5;
+    }
+  </style>
+</head>
+<body>
+  <div class="border border-top" id="bt"></div>
+  <div class="border border-bottom" id="bb"></div>
+  <div class="border border-left" id="bl"></div>
+  <div class="border border-right" id="br"></div>
+
+  <div class="handle handle-tl" id="h-tl"></div>
+  <div class="handle handle-tr" id="h-tr"></div>
+  <div class="handle handle-bl" id="h-bl"></div>
+  <div class="handle handle-br" id="h-br"></div>
+
+  <div id="ctrl-panel" style="display:none">
+    <div class="dot" id="dot"></div>
+    <span id="status-text">録画監視中</span>
+    <button id="btn-pause" onclick="togglePause()">停止</button>
+    <button id="btn-stop" onclick="doStop()">中止</button>
+  </div>
+
+  <div id="flash"></div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    let region = { left: 0, top: 0, width: 400, height: 300 };
+    let winOffset = { x: 0, y: 0 };
+    let paused = false;
+    let isRecording = false;
+
+    ipcRenderer.on('init-overlay', (e, data) => {
+      region = data.region;
+      winOffset = data.winOffset;
+      isRecording = data.recording;
+      if (isRecording) {
+        document.getElementById('ctrl-panel').style.display = 'flex';
+      }
+      updatePositions();
+    });
+
+    ipcRenderer.on('start-recording', () => {
+      isRecording = true;
+      document.getElementById('ctrl-panel').style.display = 'flex';
+      updatePositions();
+    });
+
+    ipcRenderer.on('flash', () => {
+      const flash = document.getElementById('flash');
+      flash.style.display = 'block';
+      setTimeout(() => { flash.style.display = 'none'; }, 150);
+    });
+
+    function toLocal(sx, sy) {
+      return { x: sx - winOffset.x, y: sy - winOffset.y };
+    }
+
+    function updatePositions() {
+      const r = region;
+      const p = toLocal(r.left, r.top);
+      const b = 3;
+
+      // Borders
+      Object.assign(document.getElementById('bt').style, {
+        left: (p.x - b) + 'px', top: (p.y - b) + 'px',
+        width: (r.width + b * 2) + 'px',
+      });
+      Object.assign(document.getElementById('bb').style, {
+        left: (p.x - b) + 'px', top: (p.y + r.height) + 'px',
+        width: (r.width + b * 2) + 'px',
+      });
+      Object.assign(document.getElementById('bl').style, {
+        left: (p.x - b) + 'px', top: p.y + 'px',
+        height: r.height + 'px',
+      });
+      Object.assign(document.getElementById('br').style, {
+        left: (p.x + r.width) + 'px', top: p.y + 'px',
+        height: r.height + 'px',
+      });
+
+      // Corner handles - L shapes touching the corners
+      const hs = 20;
+      Object.assign(document.getElementById('h-tl').style, {
+        left: (p.x - b - hs + 2) + 'px', top: (p.y - b - hs + 2) + 'px',
+      });
+      Object.assign(document.getElementById('h-tr').style, {
+        left: (p.x + r.width + b - 2) + 'px', top: (p.y - b - hs + 2) + 'px',
+      });
+      Object.assign(document.getElementById('h-bl').style, {
+        left: (p.x - b - hs + 2) + 'px', top: (p.y + r.height + b - 2) + 'px',
+      });
+      Object.assign(document.getElementById('h-br').style, {
+        left: (p.x + r.width + b - 2) + 'px', top: (p.y + r.height + b - 2) + 'px',
+      });
+
+      // Control panel
+      const ctrl = document.getElementById('ctrl-panel');
+      if (ctrl.style.display !== 'none') {
+        const ctrlW = ctrl.offsetWidth || 220;
+        const ctrlH = ctrl.offsetHeight || 32;
+        let cx = p.x + r.width + b - ctrlW;
+        let cy = p.y - b - hs - ctrlH - 8;
+        if (cy < 0) cy = p.y + r.height + b + hs + 8;
+        ctrl.style.left = cx + 'px';
+        ctrl.style.top = cy + 'px';
+      }
+
+      // Flash
+      Object.assign(document.getElementById('flash').style, {
+        left: p.x + 'px', top: p.y + 'px',
+        width: r.width + 'px', height: r.height + 'px',
+      });
+    }
+
+    // Corner drag
+    ['h-tl', 'h-tr', 'h-bl', 'h-br'].forEach(id => {
+      const el = document.getElementById(id);
+      let dragging = false, startX, startY;
+
+      el.addEventListener('mousedown', (e) => {
+        dragging = true;
+        startX = e.screenX;
+        startY = e.screenY;
+        e.preventDefault();
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const dx = e.screenX - startX;
+        const dy = e.screenY - startY;
+        startX = e.screenX;
+        startY = e.screenY;
+
+        const min = 30;
+        if (id === 'h-tl') {
+          if (region.width - dx >= min) { region.left += dx; region.width -= dx; }
+          if (region.height - dy >= min) { region.top += dy; region.height -= dy; }
+        } else if (id === 'h-tr') {
+          if (region.width + dx >= min) region.width += dx;
+          if (region.height - dy >= min) { region.top += dy; region.height -= dy; }
+        } else if (id === 'h-bl') {
+          if (region.width - dx >= min) { region.left += dx; region.width -= dx; }
+          if (region.height + dy >= min) region.height += dy;
+        } else if (id === 'h-br') {
+          if (region.width + dx >= min) region.width += dx;
+          if (region.height + dy >= min) region.height += dy;
+        }
+        updatePositions();
+      });
+
+      document.addEventListener('mouseup', () => {
+        if (dragging) {
+          dragging = false;
+          ipcRenderer.send('region-update', region);
+        }
+      });
+    });
+
+    function togglePause() {
+      paused = !paused;
+      const btn = document.getElementById('btn-pause');
+      const dot = document.getElementById('dot');
+      const txt = document.getElementById('status-text');
+      if (paused) {
+        btn.textContent = '再開';
+        btn.className = 'resumed';
+        dot.className = 'dot paused';
+        txt.textContent = '一時停止中';
+        ipcRenderer.send('pause-monitoring');
+      } else {
+        btn.textContent = '停止';
+        btn.className = '';
+        dot.className = 'dot';
+        txt.textContent = '録画監視中';
+        ipcRenderer.send('resume-monitoring');
+      }
+    }
+
+    function doStop() {
+      ipcRenderer.send('stop-monitoring');
+    }
+
+    // Enable/disable mouse events when hovering interactive elements
+    document.querySelectorAll('.handle, #ctrl-panel').forEach(el => {
+      el.addEventListener('mouseenter', () => {
+        ipcRenderer.send('set-ignore-mouse', false);
+      });
+      el.addEventListener('mouseleave', () => {
+        ipcRenderer.send('set-ignore-mouse', true);
+      });
+    });
+  </script>
+</body>
+</html>

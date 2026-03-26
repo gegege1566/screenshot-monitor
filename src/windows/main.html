@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Screenshot Monitor</title>
+  <link rel="stylesheet" href="main.css">
+</head>
+<body>
+  <!-- Setup View -->
+  <div id="setup-view">
+    <h1>Screenshot Monitor</h1>
+
+    <div class="btn-row">
+      <button id="btn-select" onclick="selectRegion()">キャプチャ領域を選択</button>
+      <button id="btn-start" onclick="startMonitoring()" disabled>監視スタート</button>
+      <button id="btn-load" onclick="loadFolder()">既存フォルダを参照</button>
+    </div>
+
+    <fieldset class="settings">
+      <legend>設定</legend>
+      <div class="setting-row">
+        <label>チェック間隔:</label>
+        <input type="number" id="interval" value="3" min="1" max="60" step="1">
+        <span class="unit">秒</span>
+        <span class="hint">画面変化を確認する頻度</span>
+      </div>
+      <div class="setting-row">
+        <label>変化の割合:</label>
+        <input type="number" id="threshold" value="15" min="1" max="100" step="1">
+        <span class="unit">%</span>
+        <span class="hint">領域の何%が変わったら撮影（大=大きな変化のみ）</span>
+      </div>
+      <div class="setting-row">
+        <label>色の感度:</label>
+        <input type="number" id="pixel-threshold" value="30" min="1" max="255" step="1">
+        <span class="unit"></span>
+        <span class="hint">1ピクセルの色差がこの値以上で変化とみなす(0-255)</span>
+      </div>
+    </fieldset>
+
+    <div id="status">キャプチャ領域を選択してください</div>
+  </div>
+
+  <!-- Results View -->
+  <div id="results-view" style="display:none">
+    <div class="top-bar">
+      <button onclick="newSession()">新規録画</button>
+      <button onclick="loadFolder()">既存フォルダを参照</button>
+      <span class="separator"></span>
+      <button onclick="exportPdf()">PDFに書き出す</button>
+      <div class="spacer"></div>
+      <button onclick="selectAll()">全て選択</button>
+      <button onclick="deselectAll()">全て解除</button>
+    </div>
+
+    <div class="status-bar">
+      <span id="count-label"></span>
+      <span id="source-label"></span>
+    </div>
+
+    <div id="grid-container">
+      <div id="thumbnail-grid"></div>
+      <div id="drag-select-box"></div>
+    </div>
+  </div>
+
+  <!-- Lightbox viewer -->
+  <div id="lightbox" style="display:none">
+    <div id="lb-backdrop"></div>
+    <button id="lb-close" onclick="closeLightbox()">&times;</button>
+    <button id="lb-prev" onclick="lbPrev()">&#9664;</button>
+    <button id="lb-next" onclick="lbNext()">&#9654;</button>
+    <div id="lb-check" class="lb-check selected" onclick="lbToggleSelection()">
+      <svg viewBox="0 0 14 14" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="7" x2="6" y2="10"/><line x1="6" y1="10" x2="11" y2="4"/></svg>
+    </div>
+    <img id="lb-img" src="">
+    <div id="lb-footer">
+      <span id="lb-counter"></span>
+      <span id="lb-timestamp"></span>
+      <button id="lb-toggle-sel" onclick="lbToggleSelection()">選択解除</button>
+    </div>
+  </div>
+
+  <script src="main-renderer.js"></script>
+</body>
+</html>

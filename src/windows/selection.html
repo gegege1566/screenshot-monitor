@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <style>
+    * { margin: 0; padding: 0; }
+    body {
+      background: rgba(0, 0, 0, 0.3);
+      cursor: crosshair;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+    #selection-rect {
+      position: fixed;
+      border: 3px solid red;
+      background: rgba(255, 255, 255, 0.15);
+      display: none;
+      pointer-events: none;
+    }
+    #hint {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: white;
+      font-size: 18px;
+      font-family: 'Meiryo UI', sans-serif;
+      text-shadow: 0 2px 8px rgba(0,0,0,0.8);
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="selection-rect"></div>
+  <div id="hint">ドラッグして領域を選択（Escでキャンセル）</div>
+  <script>
+    const { ipcRenderer } = require('electron');
+    const rect = document.getElementById('selection-rect');
+    const hint = document.getElementById('hint');
+
+    let offsetX = 0, offsetY = 0;
+    let sx = 0, sy = 0, dragging = false;
+
+    ipcRenderer.on('init-selection', (e, data) => {
+      offsetX = data.offsetX;
+      offsetY = data.offsetY;
+    });
+
+    document.addEventListener('mousedown', (e) => {
+      sx = e.clientX;
+      sy = e.clientY;
+      dragging = true;
+      hint.style.display = 'none';
+      rect.style.display = 'block';
+    });
+
+    document.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      const x1 = Math.min(sx, e.clientX);
+      const y1 = Math.min(sy, e.clientY);
+      const x2 = Math.max(sx, e.clientX);
+      const y2 = Math.max(sy, e.clientY);
+      rect.style.left = x1 + 'px';
+      rect.style.top = y1 + 'px';
+      rect.style.width = (x2 - x1) + 'px';
+      rect.style.height = (y2 - y1) + 'px';
+    });
+
+    document.addEventListener('mouseup', (e) => {
+      if (!dragging) return;
+      dragging = false;
+      const x1 = Math.min(sx, e.clientX);
+      const y1 = Math.min(sy, e.clientY);
+      const w = Math.abs(e.clientX - sx);
+      const h = Math.abs(e.clientY - sy);
+      if (w > 10 && h > 10) {
+        // Convert window-relative coords to screen coords
+        ipcRenderer.send('region-selected', {
+          left: x1 + offsetX,
+          top: y1 + offsetY,
+          width: w,
+          height: h,
+        });
+      } else {
+        ipcRenderer.send('region-selected', null);
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        ipcRenderer.send('region-selected', null);
+      }
+    });
+  </script>
+</body>
+</html>

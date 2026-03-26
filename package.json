@@ -1,0 +1,39 @@
+{
+  "name": "screenshot-monitor",
+  "version": "1.0.0",
+  "description": "Screen change detection and auto-capture tool",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder --win",
+    "build:dir": "electron-builder --win --dir"
+  },
+  "build": {
+    "appId": "com.screenshot-monitor.app",
+    "productName": "Screenshot Monitor",
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": null
+    },
+    "nsis": {
+      "oneClick": true,
+      "allowToChangeInstallationDirectory": false
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*"
+    ],
+    "extraResources": []
+  },
+  "dependencies": {
+    "pdf-lib": "^1.17.1",
+    "sharp": "^0.33.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}
