@@ -50,6 +50,11 @@ function createMainWindow() {
   mainWindow.setMenuBarVisibility(false);
   mainWindow.setAlwaysOnTop(true, 'screen-saver');
   mainWindow.loadFile(path.join(__dirname, 'src', 'windows', 'main.html'));
+
+  mainWindow.on('close', () => {
+    if (monitoringLoop) monitoringLoop.stop();
+    destroyOverlay();
+  });
 }
 
 // --- Region Selection ---
