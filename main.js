@@ -68,17 +68,20 @@ function createSelectionWindow() {
 
     // Create one selection window per display
     displays.forEach(d => {
+      // Use size in physical pixels to cover full display regardless of DPI
+      // Expand bounds slightly to ensure full coverage on high-DPI displays
+      const margin = 10;
       const win = new BrowserWindow({
-        x: d.bounds.x,
-        y: d.bounds.y,
-        width: d.bounds.width,
-        height: d.bounds.height,
+        x: d.bounds.x - margin,
+        y: d.bounds.y - margin,
+        width: d.bounds.width + margin * 2,
+        height: d.bounds.height + margin * 2,
         transparent: true,
         frame: false,
         alwaysOnTop: true,
         skipTaskbar: true,
         resizable: false,
-        fullscreen: false,
+        enableLargerThanScreen: true,
         webPreferences: {
           nodeIntegration: true,
           contextIsolation: false,
@@ -89,8 +92,8 @@ function createSelectionWindow() {
 
       win.webContents.on('did-finish-load', () => {
         win.webContents.send('init-selection', {
-          offsetX: d.bounds.x,
-          offsetY: d.bounds.y,
+          offsetX: d.bounds.x - margin,
+          offsetY: d.bounds.y - margin,
         });
       });
 
@@ -124,11 +127,12 @@ function createOverlayWindow(region, recording = true) {
     }
   }
 
+  const margin = 10;
   overlayWindow = new BrowserWindow({
-    x: targetDisplay.bounds.x,
-    y: targetDisplay.bounds.y,
-    width: targetDisplay.bounds.width,
-    height: targetDisplay.bounds.height,
+    x: targetDisplay.bounds.x - margin,
+    y: targetDisplay.bounds.y - margin,
+    width: targetDisplay.bounds.width + margin * 2,
+    height: targetDisplay.bounds.height + margin * 2,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
@@ -136,6 +140,7 @@ function createOverlayWindow(region, recording = true) {
     resizable: false,
     hasShadow: false,
     focusable: false,
+    enableLargerThanScreen: true,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -149,7 +154,7 @@ function createOverlayWindow(region, recording = true) {
   overlayWindow.webContents.on('did-finish-load', () => {
     overlayWindow.webContents.send('init-overlay', {
       region,
-      winOffset: { x: targetDisplay.bounds.x, y: targetDisplay.bounds.y },
+      winOffset: { x: targetDisplay.bounds.x - margin, y: targetDisplay.bounds.y - margin },
       recording,
     });
     // Click-through on transparent areas, forward events for CSS pointer-events
