@@ -46,12 +46,19 @@ async function captureScreen(region) {
   }
 
   const scaleFactor = targetDisplay.scaleFactor || 1;
-  const thumbW = Math.round(targetDisplay.bounds.width * scaleFactor);
-  const thumbH = Math.round(targetDisplay.bounds.height * scaleFactor);
+
+  // thumbnailSize applies as a max for ALL sources, so use the largest
+  // physical resolution across all displays to avoid downscaling any source
+  let maxPhysW = 0, maxPhysH = 0;
+  for (const d of displays) {
+    const sf = d.scaleFactor || 1;
+    maxPhysW = Math.max(maxPhysW, Math.round(d.bounds.width * sf));
+    maxPhysH = Math.max(maxPhysH, Math.round(d.bounds.height * sf));
+  }
 
   const sources = await desktopCapturer.getSources({
     types: ['screen'],
-    thumbnailSize: { width: thumbW, height: thumbH },
+    thumbnailSize: { width: maxPhysW, height: maxPhysH },
   });
 
   if (sources.length === 0) {
@@ -117,16 +124,32 @@ class MonitoringLoop {
   async _capture() {
     const { pngBuffer, offsetX, offsetY, scaleFactor } = await captureScreen(this.region);
 
-    // Get actual image dimensions
+    // Get actual image dimensions — the thumbnail may not match the expected
+    // physical resolution (bounds * scaleFactor) if desktopCapturer scaled it.
+    // Use the actual image size to derive the correct pixel-per-DIP ratio.
     const metadata = await sharp(pngBuffer).metadata();
     const imgW = metadata.width;
     const imgH = metadata.height;
 
+    // Derive effective scale from actual thumbnail size rather than assuming
+    // scaleFactor matches, since thumbnailSize is a shared max across sources
+    const displays = screen.getAllDisplays();
+    let dispW = imgW, dispH = imgH;
+    for (const d of displays) {
+      if (offsetX === d.bounds.x && offsetY === d.bounds.y) {
+        dispW = d.bounds.width;
+        dispH = d.bounds.height;
+        break;
+      }
+    }
+    const effectiveScaleX = imgW / dispW;
+    const effectiveScaleY = imgH / dispH;
+
     // Convert screen coordinates to image pixel coordinates and clamp
-    let left = Math.max(0, Math.round((this.region.left - offsetX) * scaleFactor));
-    let top = Math.max(0, Math.round((this.region.top - offsetY) * scaleFactor));
-    let width = Math.round(this.region.width * scaleFactor);
-    let height = Math.round(this.region.height * scaleFactor);
+    let left = Math.max(0, Math.round((this.region.left - offsetX) * effectiveScaleX));
+    let top = Math.max(0, Math.round((this.region.top - offsetY) * effectiveScaleY));
+    let width = Math.round(this.region.width * effectiveScaleX);
+    let height = Math.round(this.region.height * effectiveScaleY);
 
     // Ensure we don't exceed image bounds
     if (left + width > imgW) width = imgW - left;

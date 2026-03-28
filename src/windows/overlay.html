@@ -12,10 +12,32 @@
       pointer-events: none;
     }
 
-    /* Red border */
-    .border { position: fixed; background: red; pointer-events: none; }
-    .border-top, .border-bottom { height: 3px; }
-    .border-left, .border-right { width: 3px; }
+    /* Red border — draggable to move the region */
+    .border {
+      position: fixed;
+      pointer-events: auto !important;
+      cursor: move;
+      z-index: 8;
+    }
+    /* Visible red line drawn via ::after, hit area is the full element */
+    .border::after {
+      content: '';
+      position: absolute;
+      background: red;
+      transition: background 0.15s, box-shadow 0.15s;
+    }
+    .border:hover { cursor: move; }
+    .border.dragging { cursor: grabbing; }
+    /* Horizontal borders: tall hit area, thin visible line */
+    .border-top, .border-bottom { height: 9px; }
+    .border-top::after, .border-bottom::after { left: 0; width: 100%; height: 3px; }
+    .border-top::after { bottom: 0; }
+    .border-bottom::after { top: 0; }
+    /* Vertical borders: wide hit area, thin visible line */
+    .border-left, .border-right { width: 9px; }
+    .border-left::after, .border-right::after { top: 0; height: 100%; width: 3px; }
+    .border-left::after { right: 0; }
+    .border-right::after { left: 0; }
 
     /* Corner handles - modern L-shaped design */
     .handle {
@@ -144,13 +166,29 @@
 
     let region = { left: 0, top: 0, width: 400, height: 300 };
     let winOffset = { x: 0, y: 0 };
+    let displayBounds = null;
+    let dpiScaleX = 1, dpiScaleY = 1;
     let paused = false;
     let isRecording = false;
 
     ipcRenderer.on('init-overlay', (e, data) => {
       region = data.region;
       winOffset = data.winOffset;
+      displayBounds = data.displayBounds || null;
       isRecording = data.recording;
+
+      // Compute DPI correction: if CSS viewport doesn't match expected
+      // display size, we need to scale coordinates for correct positioning
+      if (displayBounds) {
+        const margin = 10;
+        const expectedW = displayBounds.width + margin * 2;
+        const expectedH = displayBounds.height + margin * 2;
+        const actualW = window.innerWidth;
+        const actualH = window.innerHeight;
+        dpiScaleX = actualW / expectedW;
+        dpiScaleY = actualH / expectedH;
+      }
+
       if (isRecording) {
         document.getElementById('ctrl-panel').style.display = 'flex';
       }
@@ -169,31 +207,47 @@
       setTimeout(() => { flash.style.display = 'none'; }, 150);
     });
 
+    // Convert screen (DIP) coordinates to CSS pixel coordinates in this window.
+    // When DPI differs between primary and this display, the CSS viewport may
+    // be scaled — dpiScaleX/Y corrects for this mismatch.
     function toLocal(sx, sy) {
-      return { x: sx - winOffset.x, y: sy - winOffset.y };
+      return {
+        x: (sx - winOffset.x) * dpiScaleX,
+        y: (sy - winOffset.y) * dpiScaleY,
+      };
+    }
+
+    function toCssSize(w, h) {
+      return { w: w * dpiScaleX, h: h * dpiScaleY };
     }
 
     function updatePositions() {
       const r = region;
       const p = toLocal(r.left, r.top);
+      const s = toCssSize(r.width, r.height);
       const b = 3;
 
-      // Borders
+      // Borders — hit area is 9px wide, visible ::after line is 3px
+      // Top: hit area above the visible line, line at bottom edge
+      const hit = 9;
       Object.assign(document.getElementById('bt').style, {
-        left: (p.x - b) + 'px', top: (p.y - b) + 'px',
-        width: (r.width + b * 2) + 'px',
+        left: (p.x - b) + 'px', top: (p.y - hit) + 'px',
+        width: (s.w + b * 2) + 'px',
       });
+      // Bottom: hit area below the visible line, line at top edge
       Object.assign(document.getElementById('bb').style, {
-        left: (p.x - b) + 'px', top: (p.y + r.height) + 'px',
-        width: (r.width + b * 2) + 'px',
+        left: (p.x - b) + 'px', top: (p.y + s.h) + 'px',
+        width: (s.w + b * 2) + 'px',
       });
+      // Left: hit area to the left of visible line, line at right edge
       Object.assign(document.getElementById('bl').style, {
-        left: (p.x - b) + 'px', top: p.y + 'px',
-        height: r.height + 'px',
+        left: (p.x - hit) + 'px', top: p.y + 'px',
+        height: s.h + 'px',
       });
+      // Right: hit area to the right of visible line, line at left edge
       Object.assign(document.getElementById('br').style, {
-        left: (p.x + r.width) + 'px', top: p.y + 'px',
-        height: r.height + 'px',
+        left: (p.x + s.w) + 'px', top: p.y + 'px',
+        height: s.h + 'px',
       });
 
       // Corner handles - L shapes touching the corners
@@ -202,13 +256,13 @@
         left: (p.x - b - hs + 2) + 'px', top: (p.y - b - hs + 2) + 'px',
       });
       Object.assign(document.getElementById('h-tr').style, {
-        left: (p.x + r.width + b - 2) + 'px', top: (p.y - b - hs + 2) + 'px',
+        left: (p.x + s.w + b - 2) + 'px', top: (p.y - b - hs + 2) + 'px',
       });
       Object.assign(document.getElementById('h-bl').style, {
-        left: (p.x - b - hs + 2) + 'px', top: (p.y + r.height + b - 2) + 'px',
+        left: (p.x - b - hs + 2) + 'px', top: (p.y + s.h + b - 2) + 'px',
       });
       Object.assign(document.getElementById('h-br').style, {
-        left: (p.x + r.width + b - 2) + 'px', top: (p.y + r.height + b - 2) + 'px',
+        left: (p.x + s.w + b - 2) + 'px', top: (p.y + s.h + b - 2) + 'px',
       });
 
       // Control panel
@@ -216,9 +270,9 @@
       if (ctrl.style.display !== 'none') {
         const ctrlW = ctrl.offsetWidth || 220;
         const ctrlH = ctrl.offsetHeight || 32;
-        let cx = p.x + r.width + b - ctrlW;
+        let cx = p.x + s.w + b - ctrlW;
         let cy = p.y - b - hs - ctrlH - 8;
-        if (cy < 0) cy = p.y + r.height + b + hs + 8;
+        if (cy < 0) cy = p.y + s.h + b + hs + 8;
         ctrl.style.left = cx + 'px';
         ctrl.style.top = cy + 'px';
       }
@@ -226,7 +280,42 @@
       // Flash
       Object.assign(document.getElementById('flash').style, {
         left: p.x + 'px', top: p.y + 'px',
-        width: r.width + 'px', height: r.height + 'px',
+        width: s.w + 'px', height: s.h + 'px',
+      });
+    }
+
+    // Border drag — move entire region
+    {
+      let dragging = false, startX, startY;
+      const borders = document.querySelectorAll('.border');
+
+      borders.forEach(el => {
+        el.addEventListener('mousedown', (e) => {
+          dragging = true;
+          startX = e.screenX;
+          startY = e.screenY;
+          borders.forEach(b => b.classList.add('dragging'));
+          e.preventDefault();
+        });
+      });
+
+      document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        const dx = e.screenX - startX;
+        const dy = e.screenY - startY;
+        startX = e.screenX;
+        startY = e.screenY;
+        region.left += dx;
+        region.top += dy;
+        updatePositions();
+      });
+
+      document.addEventListener('mouseup', () => {
+        if (dragging) {
+          dragging = false;
+          borders.forEach(b => b.classList.remove('dragging'));
+          ipcRenderer.send('region-update', region);
+        }
       });
     }
 
@@ -299,7 +388,7 @@
     }
 
     // Enable/disable mouse events when hovering interactive elements
-    document.querySelectorAll('.handle, #ctrl-panel').forEach(el => {
+    document.querySelectorAll('.handle, .border, #ctrl-panel').forEach(el => {
       el.addEventListener('mouseenter', () => {
         ipcRenderer.send('set-ignore-mouse', false);
       });

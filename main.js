@@ -67,15 +67,30 @@ function createSelectionWindow() {
     selectionWindows = [];
 
     // Create one selection window per display
+    const primarySF = screen.getPrimaryDisplay().scaleFactor;
+
     displays.forEach(d => {
-      // Use size in physical pixels to cover full display regardless of DPI
-      // Expand bounds slightly to ensure full coverage on high-DPI displays
       const margin = 10;
-      const win = new BrowserWindow({
+      const targetBounds = {
         x: d.bounds.x - margin,
         y: d.bounds.y - margin,
         width: d.bounds.width + margin * 2,
         height: d.bounds.height + margin * 2,
+      };
+
+      // On Windows, when a window is created on a display with a different DPI
+      // than the primary, Electron resizes it by (targetDPI / primaryDPI).
+      // Pre-compensate so the final size after DPI adjustment is correct.
+      const dpiRatio = d.scaleFactor / primarySF;
+      const initWidth = Math.round(targetBounds.width / dpiRatio);
+      const initHeight = Math.round(targetBounds.height / dpiRatio);
+
+      const win = new BrowserWindow({
+        x: targetBounds.x,
+        y: targetBounds.y,
+        width: initWidth,
+        height: initHeight,
+        show: false,
         transparent: true,
         frame: false,
         alwaysOnTop: true,
@@ -90,10 +105,19 @@ function createSelectionWindow() {
       win.setMenuBarVisibility(false);
       win.loadFile(path.join(__dirname, 'src', 'windows', 'selection.html'));
 
+      win.once('ready-to-show', () => {
+        // Re-enforce correct bounds after DPI change has been processed
+        win.setBounds(targetBounds);
+        win.show();
+      });
+
       win.webContents.on('did-finish-load', () => {
+        // Send display info so renderer can correct coordinates if needed
         win.webContents.send('init-selection', {
-          offsetX: d.bounds.x - margin,
-          offsetY: d.bounds.y - margin,
+          offsetX: targetBounds.x,
+          offsetY: targetBounds.y,
+          displayBounds: d.bounds,
+          scaleFactor: d.scaleFactor,
         });
       });
 
@@ -128,11 +152,23 @@ function createOverlayWindow(region, recording = true) {
   }
 
   const margin = 10;
-  overlayWindow = new BrowserWindow({
+  const primarySF = screen.getPrimaryDisplay().scaleFactor;
+  const targetBounds = {
     x: targetDisplay.bounds.x - margin,
     y: targetDisplay.bounds.y - margin,
     width: targetDisplay.bounds.width + margin * 2,
     height: targetDisplay.bounds.height + margin * 2,
+  };
+  const dpiRatio = targetDisplay.scaleFactor / primarySF;
+  const initWidth = Math.round(targetBounds.width / dpiRatio);
+  const initHeight = Math.round(targetBounds.height / dpiRatio);
+
+  overlayWindow = new BrowserWindow({
+    x: targetBounds.x,
+    y: targetBounds.y,
+    width: initWidth,
+    height: initHeight,
+    show: false,
     transparent: true,
     frame: false,
     alwaysOnTop: true,
@@ -151,10 +187,17 @@ function createOverlayWindow(region, recording = true) {
   overlayWindow.setIgnoreMouseEvents(true, { forward: true });
   overlayWindow.loadFile(path.join(__dirname, 'src', 'windows', 'overlay.html'));
 
+  overlayWindow.once('ready-to-show', () => {
+    overlayWindow.setBounds(targetBounds);
+    overlayWindow.show();
+  });
+
   overlayWindow.webContents.on('did-finish-load', () => {
     overlayWindow.webContents.send('init-overlay', {
       region,
-      winOffset: { x: targetDisplay.bounds.x - margin, y: targetDisplay.bounds.y - margin },
+      winOffset: { x: targetBounds.x, y: targetBounds.y },
+      displayBounds: targetDisplay.bounds,
+      scaleFactor: targetDisplay.scaleFactor,
       recording,
     });
     // Click-through on transparent areas, forward events for CSS pointer-events
@@ -186,18 +229,22 @@ function destroyOverlay() {
 ipcMain.handle('select-region', async () => {
   // Remove previous preview overlay
   destroyOverlay();
+  latestRegion = null;
   if (mainWindow) mainWindow.hide();
   const region = await createSelectionWindow();
   if (mainWindow) mainWindow.show();
   // Show preview overlay (red border + handles, no control panel)
   if (region) {
+    latestRegion = region;
     createOverlayWindow(region, false);
   }
   return region;
 });
 
 ipcMain.handle('start-monitoring', async (e, config) => {
-  const { region, interval, thresholdPct, pixelThreshold } = config;
+  // Use the latest region if it was updated via overlay drag, otherwise use config
+  const region = latestRegion || config.region;
+  const { interval, thresholdPct, pixelThreshold } = config;
 
   // Create session directory
   const now = new Date();
@@ -272,9 +319,17 @@ ipcMain.on('stop-monitoring', () => {
   }
 });
 
+// Track the latest region so overlay moves are reflected in the next start-monitoring
+let latestRegion = null;
+
 ipcMain.on('region-update', (e, region) => {
+  latestRegion = region;
   if (monitoringLoop) {
     monitoringLoop.updateRegion(region);
+  }
+  // Notify main window so its stored region stays in sync
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('region-updated', region);
   }
 });
 
@@ -314,6 +369,15 @@ ipcMain.handle('save-file-dialog', async (e, defaultName) => {
 });
 
 ipcMain.handle('get-screenshots-root', () => getScreenshotsRootDir());
+
+ipcMain.on('reset-window', () => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    mainWindow.setSize(500, 320);
+    mainWindow.center();
+    mainWindow.setResizable(false);
+  }
+});
 
 // --- App Lifecycle ---
 

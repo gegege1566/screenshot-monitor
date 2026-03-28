@@ -2,6 +2,13 @@ let region = null;
 let thumbItems = [];
 let lbIndex = -1; // current lightbox index
 
+// Keep region in sync when overlay moves/resizes it
+window.api.onRegionUpdated((r) => {
+  region = r;
+  document.getElementById('status').textContent =
+    `領域: ${region.width}x${region.height} (${region.left}, ${region.top})`;
+});
+
 // --- Setup View ---
 
 async function selectRegion() {
@@ -167,6 +174,7 @@ function newSession() {
   document.getElementById('setup-view').style.display = 'block';
   document.getElementById('btn-start').disabled = true;
   document.getElementById('status').textContent = 'キャプチャ領域を選択してください';
+  window.api.resetWindow();
 }
 
 // --- Lightbox ---

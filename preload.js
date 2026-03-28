@@ -11,6 +11,8 @@ contextBridge.exposeInMainWorld('api', {
   saveFileDialog: (defaultName) => ipcRenderer.invoke('save-file-dialog', defaultName),
   getScreenshotsRoot: () => ipcRenderer.invoke('get-screenshots-root'),
   onCapture: (callback) => ipcRenderer.on('capture', (e, path) => callback(path)),
+  onRegionUpdated: (callback) => ipcRenderer.on('region-updated', (e, r) => callback(r)),
+  resetWindow: () => ipcRenderer.send('reset-window'),
   onMonitoringStopped: (callback) => ipcRenderer.on('monitoring-stopped', () => callback()),
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
 });

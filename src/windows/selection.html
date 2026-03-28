@@ -40,11 +40,33 @@
     const hint = document.getElementById('hint');
 
     let offsetX = 0, offsetY = 0;
+    let displayBounds = null;
     let sx = 0, sy = 0, dragging = false;
+
+    // Convert CSS pixel coordinate to screen (DIP) coordinate.
+    // When the window's CSS viewport doesn't match the expected display size
+    // (due to DPI mismatch between primary and this display), we scale
+    // the CSS coordinates to map correctly to the display's DIP bounds.
+    function cssToScreen(cx, cy) {
+      let x = cx, y = cy;
+      if (displayBounds) {
+        const margin = 10;
+        const expectedW = displayBounds.width + margin * 2;
+        const expectedH = displayBounds.height + margin * 2;
+        const actualW = window.innerWidth;
+        const actualH = window.innerHeight;
+        if (Math.abs(actualW - expectedW) > 2) {
+          x = cx * (expectedW / actualW);
+          y = cy * (expectedH / actualH);
+        }
+      }
+      return { x: x + offsetX, y: y + offsetY };
+    }
 
     ipcRenderer.on('init-selection', (e, data) => {
       offsetX = data.offsetX;
       offsetY = data.offsetY;
+      displayBounds = data.displayBounds || null;
     });
 
     document.addEventListener('mousedown', (e) => {
@@ -75,12 +97,13 @@
       const w = Math.abs(e.clientX - sx);
       const h = Math.abs(e.clientY - sy);
       if (w > 10 && h > 10) {
-        // Convert window-relative coords to screen coords
+        const topLeft = cssToScreen(x1, y1);
+        const bottomRight = cssToScreen(x1 + w, y1 + h);
         ipcRenderer.send('region-selected', {
-          left: x1 + offsetX,
-          top: y1 + offsetY,
-          width: w,
-          height: h,
+          left: topLeft.x,
+          top: topLeft.y,
+          width: bottomRight.x - topLeft.x,
+          height: bottomRight.y - topLeft.y,
         });
       } else {
         ipcRenderer.send('region-selected', null);
