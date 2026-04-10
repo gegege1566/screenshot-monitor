@@ -1,6 +1,7 @@
 let region = null;
 let thumbItems = [];
 let lbIndex = -1; // current lightbox index
+let imageCacheBuster = ''; // appended to file:// URLs to bust browser cache after trim
 
 // --- Load persisted settings ---
 (async function initSettings() {
@@ -232,7 +233,8 @@ function lbKeyHandler(e) {
 
 function updateLightbox() {
   const item = thumbItems[lbIndex];
-  document.getElementById('lb-img').src = `file://${item.filepath.replace(/\\/g, '/')}`;
+  const cb = imageCacheBuster ? `?t=${imageCacheBuster}` : '';
+  document.getElementById('lb-img').src = `file://${item.filepath.replace(/\\/g, '/')}${cb}`;
   document.getElementById('lb-counter').textContent = `${lbIndex + 1} / ${thumbItems.length}`;
 
   const name = item.filepath.replace(/\\/g, '/').split('/').pop().replace(/\.\w+$/, '');
@@ -508,6 +510,11 @@ function renderTrimIndicators() {
         indicator.textContent = '\u2500';
       }
       el.appendChild(indicator);
+
+      // Show crop preview overlay on thumbnail
+      if (group.crop) {
+        addCropPreview(el, group);
+      }
     }
 
     if (trimPhase === 'end' && idx === trimPendingStart) {
@@ -521,8 +528,69 @@ function renderTrimIndicators() {
   updateApplyButton();
 }
 
+function addCropPreview(thumbEl, group) {
+  const imgEl = thumbEl.querySelector('img');
+  if (!imgEl) return;
+
+  const doLayout = () => {
+    // Remove any existing preview on this thumb
+    thumbEl.querySelectorAll('.trim-crop-preview').forEach(e => e.remove());
+
+    const imgW = imgEl.clientWidth;
+    const imgH = imgEl.clientHeight;
+    if (imgW === 0 || imgH === 0) return;
+
+    const refW = group.refWidth || imgEl.naturalWidth || imgW;
+    const refH = group.refHeight || imgEl.naturalHeight || imgH;
+
+    const scaleX = imgW / refW;
+    const scaleY = imgH / refH;
+
+    const cropL = group.crop.left * scaleX;
+    const cropT = group.crop.top * scaleY;
+    const cropW = group.crop.width * scaleX;
+    const cropH = group.crop.height * scaleY;
+
+    // Image offset within thumb-item (accounts for padding + centering)
+    const oL = imgEl.offsetLeft;
+    const oT = imgEl.offsetTop;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'trim-crop-preview';
+    overlay.style.left = (oL + cropL) + 'px';
+    overlay.style.top = (oT + cropT) + 'px';
+    overlay.style.width = cropW + 'px';
+    overlay.style.height = cropH + 'px';
+    overlay.style.borderColor = group.color;
+    thumbEl.appendChild(overlay);
+
+    // Dim area outside crop
+    const dimOverlay = document.createElement('div');
+    dimOverlay.className = 'trim-crop-dim';
+    dimOverlay.style.left = oL + 'px';
+    dimOverlay.style.top = oT + 'px';
+    dimOverlay.style.width = imgW + 'px';
+    dimOverlay.style.height = imgH + 'px';
+    // Use clip-path to cut out the crop area (polygon with hole)
+    const cx1 = cropL, cy1 = cropT;
+    const cx2 = cropL + cropW, cy2 = cropT + cropH;
+    dimOverlay.style.clipPath =
+      `polygon(0 0, ${imgW}px 0, ${imgW}px ${imgH}px, 0 ${imgH}px, 0 0, ` +
+      `${cx1}px ${cy1}px, ${cx1}px ${cy2}px, ${cx2}px ${cy2}px, ${cx2}px ${cy1}px, ${cx1}px ${cy1}px)`;
+    thumbEl.appendChild(dimOverlay);
+  };
+
+  if (imgEl.complete && imgEl.naturalWidth > 0) {
+    doLayout();
+  } else {
+    imgEl.addEventListener('load', doLayout, { once: true });
+  }
+}
+
 function clearTrimIndicators() {
   document.querySelectorAll('.trim-indicator').forEach(e => e.remove());
+  document.querySelectorAll('.trim-crop-preview').forEach(e => e.remove());
+  document.querySelectorAll('.trim-crop-dim').forEach(e => e.remove());
   document.querySelectorAll('.trim-start-pending').forEach(e => e.classList.remove('trim-start-pending'));
 }
 
@@ -579,11 +647,15 @@ let cropRect = null;        // { x, y, w, h } in display px
 let cropScale = 1;
 let cropImgEl = null;
 let cropCurrentIdx = -1;    // current image index being previewed
+let cropRefWidth = 0;       // reference image natural width (first image in group)
+let cropRefHeight = 0;      // reference image natural height
 
 function openCropEditor(group) {
   cropEditorGroup = group;
   cropRect = null;
   cropCurrentIdx = group.startIdx;
+  cropRefWidth = group.refWidth || 0;
+  cropRefHeight = group.refHeight || 0;
 
   const modal = document.getElementById('crop-editor');
   modal.style.display = 'flex';
@@ -615,16 +687,25 @@ function loadCropImage(idx) {
   img.onload = () => {
     cropImgEl = img;
     cropScale = img.naturalWidth / img.clientWidth;
+
+    // Record the first image's natural size as the reference for proportional scaling
+    if (cropRefWidth === 0 && cropRefHeight === 0) {
+      cropRefWidth = img.naturalWidth;
+      cropRefHeight = img.naturalHeight;
+    }
+
     document.getElementById('crop-dimensions').textContent =
       `\u753b\u50cf\u30b5\u30a4\u30ba: ${img.naturalWidth} \u00d7 ${img.naturalHeight}`;
 
-    // Restore existing crop rect if group has one
+    // Restore existing crop rect (scale from reference coordinates to this image's display coordinates)
     if (cropEditorGroup.crop) {
+      const sX = img.naturalWidth / (cropRefWidth || img.naturalWidth);
+      const sY = img.naturalHeight / (cropRefHeight || img.naturalHeight);
       cropRect = {
-        x: cropEditorGroup.crop.left / cropScale,
-        y: cropEditorGroup.crop.top / cropScale,
-        w: cropEditorGroup.crop.width / cropScale,
-        h: cropEditorGroup.crop.height / cropScale,
+        x: (cropEditorGroup.crop.left * sX) / cropScale,
+        y: (cropEditorGroup.crop.top * sY) / cropScale,
+        w: (cropEditorGroup.crop.width * sX) / cropScale,
+        h: (cropEditorGroup.crop.height * sY) / cropScale,
       };
     }
     updateCropSelection();
@@ -695,13 +776,22 @@ function confirmCropEditor() {
   }
 
   const r = normalizeCropRect(cropRect);
+  const img = document.getElementById('crop-img');
+
+  // Convert display coords to current image's pixel coords, then to reference coords
+  const curNatW = img.naturalWidth;
+  const curNatH = img.naturalHeight;
+  const sX = (cropRefWidth || curNatW) / curNatW;
+  const sY = (cropRefHeight || curNatH) / curNatH;
 
   cropEditorGroup.crop = {
-    left: Math.round(r.x * cropScale),
-    top: Math.round(r.y * cropScale),
-    width: Math.round(r.w * cropScale),
-    height: Math.round(r.h * cropScale),
+    left: Math.round(r.x * cropScale * sX),
+    top: Math.round(r.y * cropScale * sY),
+    width: Math.round(r.w * cropScale * sX),
+    height: Math.round(r.h * cropScale * sY),
   };
+  cropEditorGroup.refWidth = cropRefWidth;
+  cropEditorGroup.refHeight = cropRefHeight;
 
   document.getElementById('crop-editor').style.display = 'none';
   cropEditorGroup = null;
@@ -882,6 +972,8 @@ async function applyAllTrims() {
   const trimData = validGroups.map(g => ({
     imagePaths: thumbItems.slice(g.startIdx, g.endIdx + 1).map(it => it.filepath),
     crop: g.crop,
+    refWidth: g.refWidth || 0,
+    refHeight: g.refHeight || 0,
   }));
 
   try {
@@ -902,7 +994,8 @@ async function applyAllTrims() {
 }
 
 function reloadThumbnails() {
-  const ts = Date.now();
+  const ts = String(Date.now());
+  imageCacheBuster = ts;
   document.querySelectorAll('.thumb-item img').forEach(img => {
     const src = img.src.split('?')[0];
     img.src = src + '?t=' + ts;

@@ -403,14 +403,19 @@ ipcMain.on('manual-capture', () => {
 ipcMain.handle('apply-trims', async (e, trimGroups) => {
   let count = 0;
   for (const group of trimGroups) {
-    const { crop, imagePaths } = group;
+    const { crop, imagePaths, refWidth, refHeight } = group;
     for (const imgPath of imagePaths) {
       try {
         const meta = await sharp(imgPath).metadata();
-        const left = Math.max(0, Math.round(crop.left));
-        const top = Math.max(0, Math.round(crop.top));
-        let width = Math.round(crop.width);
-        let height = Math.round(crop.height);
+
+        // Scale crop proportionally if image size differs from reference
+        const scaleX = (refWidth && refWidth > 0) ? meta.width / refWidth : 1;
+        const scaleY = (refHeight && refHeight > 0) ? meta.height / refHeight : 1;
+
+        const left = Math.max(0, Math.round(crop.left * scaleX));
+        const top = Math.max(0, Math.round(crop.top * scaleY));
+        let width = Math.round(crop.width * scaleX);
+        let height = Math.round(crop.height * scaleY);
         if (left + width > meta.width) width = meta.width - left;
         if (top + height > meta.height) height = meta.height - top;
         if (width < 1 || height < 1) continue;
