@@ -123,6 +123,8 @@
       transition: background 0.15s;
     }
 
+    #btn-capture { background: #1976D2; color: white; }
+    #btn-capture:hover { background: #1565C0; }
     #btn-pause { background: #555; color: white; }
     #btn-pause:hover { background: #777; }
     #btn-pause.resumed { background: #282; }
@@ -155,6 +157,7 @@
   <div id="ctrl-panel" style="display:none">
     <div class="dot" id="dot"></div>
     <span id="status-text">録画監視中</span>
+    <button id="btn-capture" onclick="doManualCapture()">手動キャプチャ</button>
     <button id="btn-pause" onclick="togglePause()">停止</button>
     <button id="btn-stop" onclick="doStop()">中止</button>
   </div>
@@ -381,6 +384,10 @@
         txt.textContent = '録画監視中';
         ipcRenderer.send('resume-monitoring');
       }
+    }
+
+    function doManualCapture() {
+      ipcRenderer.send('manual-capture');
     }
 
     function doStop() {

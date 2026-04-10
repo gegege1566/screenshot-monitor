@@ -195,6 +195,16 @@ class MonitoringLoop {
   pause() { this.paused = true; }
   resume() { this.paused = false; }
 
+  async forceCapture() {
+    if (this.stopped) return;
+    this.forceNext = true;
+    if (this.timer) {
+      clearTimeout(this.timer);
+      this.timer = null;
+    }
+    this._tick();
+  }
+
   updateRegion(region) {
     this.region = { ...region };
     this.forceNext = true;

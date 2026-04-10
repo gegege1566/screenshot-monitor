@@ -8,7 +8,7 @@
 <body>
   <!-- Setup View -->
   <div id="setup-view">
-    <h1>Screenshot Monitor</h1>
+    <h1>Screenshot Monitor <span class="version">v1.0.4</span></h1>
 
     <div class="btn-row">
       <button id="btn-select" onclick="selectRegion()">キャプチャ領域を選択</button>
@@ -20,13 +20,13 @@
       <legend>設定</legend>
       <div class="setting-row">
         <label>チェック間隔:</label>
-        <input type="number" id="interval" value="3" min="1" max="60" step="1">
+        <input type="number" id="interval" value="1" min="1" max="60" step="1">
         <span class="unit">秒</span>
         <span class="hint">画面変化を確認する頻度</span>
       </div>
       <div class="setting-row">
         <label>変化の割合:</label>
-        <input type="number" id="threshold" value="15" min="1" max="100" step="1">
+        <input type="number" id="threshold" value="10" min="1" max="100" step="1">
         <span class="unit">%</span>
         <span class="hint">領域の何%が変わったら撮影（大=大きな変化のみ）</span>
       </div>
@@ -43,14 +43,35 @@
 
   <!-- Results View -->
   <div id="results-view" style="display:none">
-    <div class="top-bar">
+    <div class="top-bar" id="normal-toolbar">
       <button onclick="newSession()">新規録画</button>
       <button onclick="loadFolder()">既存フォルダを参照</button>
       <span class="separator"></span>
       <button onclick="exportPdf()">PDFに書き出す</button>
+      <button onclick="enterTrimMode()">トリミング</button>
       <div class="spacer"></div>
       <button onclick="selectAll()">全て選択</button>
       <button onclick="deselectAll()">全て解除</button>
+    </div>
+
+    <div id="trim-toolbar" style="display:none">
+      <div class="trim-toolbar-top">
+        <button onclick="exitTrimMode()">&#8592; 戻る</button>
+        <span class="separator"></span>
+        <div id="trim-step-guide" class="trim-step-guide">
+          <span class="trim-step" id="trim-step-1"><span class="step-num">1</span> 開始画像をクリック</span>
+          <span class="trim-step-arrow">&#9654;</span>
+          <span class="trim-step" id="trim-step-2"><span class="step-num">2</span> 終了画像をクリック</span>
+          <span class="trim-step-arrow">&#9654;</span>
+          <span class="trim-step" id="trim-step-3"><span class="step-num">3</span> トリミング範囲を指定</span>
+        </div>
+        <span id="trim-instruction" class="trim-instruction"></span>
+        <div class="spacer"></div>
+        <button class="btn-apply-trim" onclick="applyAllTrims()" id="btn-apply-trim" disabled>
+          &#9986; トリミングを実行
+        </button>
+      </div>
+      <div id="trim-group-list"></div>
     </div>
 
     <div class="status-bar">
@@ -61,6 +82,40 @@
     <div id="grid-container">
       <div id="thumbnail-grid"></div>
       <div id="drag-select-box"></div>
+    </div>
+  </div>
+
+  <!-- Crop Editor Modal -->
+  <div id="crop-editor" style="display:none">
+    <div class="crop-editor-backdrop" onclick="cancelCropEditor()"></div>
+    <div class="crop-editor-panel">
+      <div class="crop-editor-header">
+        <span id="crop-range-info"></span>
+        <span id="crop-dimensions"></span>
+      </div>
+      <div class="crop-editor-body">
+        <button class="crop-nav-btn crop-nav-prev" id="crop-prev" onclick="cropPrev()">&#9664;</button>
+        <div id="crop-canvas-wrapper">
+          <img id="crop-img" src="">
+          <div id="crop-selection" style="display:none">
+            <div class="crop-handle" data-handle="tl"></div>
+            <div class="crop-handle" data-handle="tr"></div>
+            <div class="crop-handle" data-handle="bl"></div>
+            <div class="crop-handle" data-handle="br"></div>
+          </div>
+        </div>
+        <button class="crop-nav-btn crop-nav-next" id="crop-next" onclick="cropNext()">&#9654;</button>
+      </div>
+      <div class="crop-editor-nav-info">
+        <span id="crop-nav-counter"></span>
+        <span id="crop-nav-timestamp"></span>
+        <button class="crop-sel-toggle" id="crop-sel-toggle" onclick="cropToggleSelection()"></button>
+      </div>
+      <div class="crop-editor-footer">
+        <span class="crop-hint">画像上でドラッグしてトリミング範囲を描画 / &#9664;&#9654;で他の画像を確認</span>
+        <button onclick="cancelCropEditor()">キャンセル</button>
+        <button class="btn-primary" onclick="confirmCropEditor()">確定</button>
+      </div>
     </div>
   </div>
 

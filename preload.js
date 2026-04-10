@@ -15,4 +15,8 @@ contextBridge.exposeInMainWorld('api', {
   resetWindow: () => ipcRenderer.send('reset-window'),
   onMonitoringStopped: (callback) => ipcRenderer.on('monitoring-stopped', () => callback()),
   removeAllListeners: (channel) => ipcRenderer.removeAllListeners(channel),
+  manualCapture: () => ipcRenderer.send('manual-capture'),
+  loadSettings: () => ipcRenderer.invoke('load-settings'),
+  saveSettings: (settings) => ipcRenderer.invoke('save-settings', settings),
+  applyTrims: (trimGroups) => ipcRenderer.invoke('apply-trims', trimGroups),
 });

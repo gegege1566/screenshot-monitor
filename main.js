@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, screen, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
+const sharp = require('sharp');
 
 // Fix GPU cache access errors
 app.setPath('userData', path.join(os.tmpdir(), 'screenshot-monitor'));
@@ -369,6 +370,64 @@ ipcMain.handle('save-file-dialog', async (e, defaultName) => {
 });
 
 ipcMain.handle('get-screenshots-root', () => getScreenshotsRootDir());
+
+// --- Settings Persistence ---
+
+function getSettingsPath() {
+  return path.join(getAppDir(), 'monitor-settings.json');
+}
+
+ipcMain.handle('load-settings', () => {
+  try {
+    const p = getSettingsPath();
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf8'));
+  } catch (e) { /* ignore */ }
+  return null;
+});
+
+ipcMain.handle('save-settings', (e, settings) => {
+  try {
+    fs.writeFileSync(getSettingsPath(), JSON.stringify(settings, null, 2));
+    return true;
+  } catch (e) { return false; }
+});
+
+// --- Manual Capture ---
+
+ipcMain.on('manual-capture', () => {
+  if (monitoringLoop) monitoringLoop.forceCapture();
+});
+
+// --- Apply Trims ---
+
+ipcMain.handle('apply-trims', async (e, trimGroups) => {
+  let count = 0;
+  for (const group of trimGroups) {
+    const { crop, imagePaths } = group;
+    for (const imgPath of imagePaths) {
+      try {
+        const meta = await sharp(imgPath).metadata();
+        const left = Math.max(0, Math.round(crop.left));
+        const top = Math.max(0, Math.round(crop.top));
+        let width = Math.round(crop.width);
+        let height = Math.round(crop.height);
+        if (left + width > meta.width) width = meta.width - left;
+        if (top + height > meta.height) height = meta.height - top;
+        if (width < 1 || height < 1) continue;
+
+        const buf = await sharp(imgPath)
+          .extract({ left, top, width, height })
+          .png()
+          .toBuffer();
+        fs.writeFileSync(imgPath, buf);
+        count++;
+      } catch (err) {
+        console.error('Trim error:', imgPath, err);
+      }
+    }
+  }
+  return count;
+});
 
 ipcMain.on('reset-window', () => {
   if (mainWindow && !mainWindow.isDestroyed()) {
