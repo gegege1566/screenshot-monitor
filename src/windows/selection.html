@@ -44,15 +44,14 @@
     let sx = 0, sy = 0, dragging = false;
 
     // Convert CSS pixel coordinate to screen (DIP) coordinate.
-    // When the window's CSS viewport doesn't match the expected display size
-    // (due to DPI mismatch between primary and this display), we scale
-    // the CSS coordinates to map correctly to the display's DIP bounds.
+    // offsetX/Y come from main's win.getBounds() after setBounds, so they
+    // reflect the actual window origin (which is inset 1px from the display
+    // edge to avoid Windows fullscreen optimizations).
     function cssToScreen(cx, cy) {
       let x = cx, y = cy;
       if (displayBounds) {
-        const margin = 10;
-        const expectedW = displayBounds.width + margin * 2;
-        const expectedH = displayBounds.height + margin * 2;
+        const expectedW = displayBounds.width;
+        const expectedH = displayBounds.height;
         const actualW = window.innerWidth;
         const actualH = window.innerHeight;
         if (Math.abs(actualW - expectedW) > 2) {

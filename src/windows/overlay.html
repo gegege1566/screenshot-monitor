@@ -93,17 +93,10 @@
       border-radius: 50%;
       background: red;
       box-shadow: 0 0 6px rgba(255,0,0,0.6);
-      animation: blink 1.6s infinite;
     }
     .dot.paused {
       background: #ffaa00;
       box-shadow: 0 0 6px rgba(255,170,0,0.6);
-      animation: none;
-    }
-
-    @keyframes blink {
-      0%, 100% { opacity: 1; }
-      50% { opacity: 0.15; }
     }
 
     #ctrl-panel span {
@@ -181,11 +174,12 @@
       isRecording = data.recording;
 
       // Compute DPI correction: if CSS viewport doesn't match expected
-      // display size, we need to scale coordinates for correct positioning
+      // display size, we need to scale coordinates for correct positioning.
+      // winOffset comes from main's win.getBounds() after setBounds, so it
+      // matches the actual window origin even if Windows adjusted it.
       if (displayBounds) {
-        const margin = 10;
-        const expectedW = displayBounds.width + margin * 2;
-        const expectedH = displayBounds.height + margin * 2;
+        const expectedW = displayBounds.width;
+        const expectedH = displayBounds.height;
         const actualW = window.innerWidth;
         const actualH = window.innerHeight;
         dpiScaleX = actualW / expectedW;
@@ -230,42 +224,42 @@
       const s = toCssSize(r.width, r.height);
       const b = 3;
 
-      // Borders — hit area is 9px wide, visible ::after line is 3px
-      // Top: hit area above the visible line, line at bottom edge
+      // Borders — hit area is 9px wide, visible ::after line is 3px.
+      // gap: keep the visible red line 2px away from the region edge so
+      // sub-pixel rendering / DPI rounding never leaks red into the
+      // cropped screenshot area.
       const hit = 9;
+      const gap = 2;
       Object.assign(document.getElementById('bt').style, {
-        left: (p.x - b) + 'px', top: (p.y - hit) + 'px',
-        width: (s.w + b * 2) + 'px',
+        left: (p.x - b - gap) + 'px', top: (p.y - hit - gap) + 'px',
+        width: (s.w + (b + gap) * 2) + 'px',
       });
-      // Bottom: hit area below the visible line, line at top edge
       Object.assign(document.getElementById('bb').style, {
-        left: (p.x - b) + 'px', top: (p.y + s.h) + 'px',
-        width: (s.w + b * 2) + 'px',
+        left: (p.x - b - gap) + 'px', top: (p.y + s.h + gap) + 'px',
+        width: (s.w + (b + gap) * 2) + 'px',
       });
-      // Left: hit area to the left of visible line, line at right edge
       Object.assign(document.getElementById('bl').style, {
-        left: (p.x - hit) + 'px', top: p.y + 'px',
-        height: s.h + 'px',
+        left: (p.x - hit - gap) + 'px', top: (p.y - gap) + 'px',
+        height: (s.h + gap * 2) + 'px',
       });
-      // Right: hit area to the right of visible line, line at left edge
       Object.assign(document.getElementById('br').style, {
-        left: (p.x + s.w) + 'px', top: p.y + 'px',
-        height: s.h + 'px',
+        left: (p.x + s.w + gap) + 'px', top: (p.y - gap) + 'px',
+        height: (s.h + gap * 2) + 'px',
       });
 
-      // Corner handles - L shapes touching the corners
+      // Corner handles - L shapes touching the (gap-shifted) corners
       const hs = 20;
       Object.assign(document.getElementById('h-tl').style, {
-        left: (p.x - b - hs + 2) + 'px', top: (p.y - b - hs + 2) + 'px',
+        left: (p.x - b - gap - hs + 2) + 'px', top: (p.y - b - gap - hs + 2) + 'px',
       });
       Object.assign(document.getElementById('h-tr').style, {
-        left: (p.x + s.w + b - 2) + 'px', top: (p.y - b - hs + 2) + 'px',
+        left: (p.x + s.w + b + gap - 2) + 'px', top: (p.y - b - gap - hs + 2) + 'px',
       });
       Object.assign(document.getElementById('h-bl').style, {
-        left: (p.x - b - hs + 2) + 'px', top: (p.y + s.h + b - 2) + 'px',
+        left: (p.x - b - gap - hs + 2) + 'px', top: (p.y + s.h + b + gap - 2) + 'px',
       });
       Object.assign(document.getElementById('h-br').style, {
-        left: (p.x + s.w + b - 2) + 'px', top: (p.y + s.h + b - 2) + 'px',
+        left: (p.x + s.w + b + gap - 2) + 'px', top: (p.y + s.h + b + gap - 2) + 'px',
       });
 
       // Control panel

@@ -1,6 +1,6 @@
 {
   "name": "screenshot-monitor",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Screen change detection and auto-capture tool",
   "main": "main.js",
   "scripts": {

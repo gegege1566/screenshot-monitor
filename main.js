@@ -66,38 +66,36 @@ function createSelectionWindow() {
   return new Promise((resolve) => {
     const displays = screen.getAllDisplays();
     selectionWindows = [];
-
-    // Create one selection window per display
     const primarySF = screen.getPrimaryDisplay().scaleFactor;
 
-    displays.forEach(d => {
-      const margin = 10;
+    displays.forEach((d) => {
       const targetBounds = {
-        x: d.bounds.x - margin,
-        y: d.bounds.y - margin,
-        width: d.bounds.width + margin * 2,
-        height: d.bounds.height + margin * 2,
+        x: d.bounds.x,
+        y: d.bounds.y,
+        width: d.bounds.width,
+        height: d.bounds.height,
       };
 
-      // On Windows, when a window is created on a display with a different DPI
-      // than the primary, Electron resizes it by (targetDPI / primaryDPI).
-      // Pre-compensate so the final size after DPI adjustment is correct.
       const dpiRatio = d.scaleFactor / primarySF;
       const initWidth = Math.round(targetBounds.width / dpiRatio);
       const initHeight = Math.round(targetBounds.height / dpiRatio);
 
+      // 1px inset from display edges — a window that exactly covers the
+      // display triggers Windows fullscreen optimizations, which on the
+      // primary monitor switch DWM into an exclusive path where the
+      // transparent/frameless window's dynamic content stops rendering.
+      // Shrinking by 1px avoids that path entirely.
       const win = new BrowserWindow({
-        x: targetBounds.x,
-        y: targetBounds.y,
-        width: initWidth,
-        height: initHeight,
+        x: targetBounds.x + 1,
+        y: targetBounds.y + 1,
+        width: Math.max(100, initWidth - 2),
+        height: Math.max(100, initHeight - 2),
         show: false,
         transparent: true,
         frame: false,
         alwaysOnTop: true,
         skipTaskbar: true,
         resizable: false,
-        enableLargerThanScreen: true,
         webPreferences: {
           nodeIntegration: true,
           contextIsolation: false,
@@ -107,16 +105,18 @@ function createSelectionWindow() {
       win.loadFile(path.join(__dirname, 'src', 'windows', 'selection.html'));
 
       win.once('ready-to-show', () => {
-        // Re-enforce correct bounds after DPI change has been processed
-        win.setBounds(targetBounds);
+        // Re-enforce the inset bounds after DPI adjustments.
+        win.setBounds({
+          x: targetBounds.x + 1,
+          y: targetBounds.y + 1,
+          width: Math.max(100, targetBounds.width - 2),
+          height: Math.max(100, targetBounds.height - 2),
+        });
         win.show();
-      });
-
-      win.webContents.on('did-finish-load', () => {
-        // Send display info so renderer can correct coordinates if needed
+        const actual = win.getBounds();
         win.webContents.send('init-selection', {
-          offsetX: targetBounds.x,
-          offsetY: targetBounds.y,
+          offsetX: actual.x,
+          offsetY: actual.y,
           displayBounds: d.bounds,
           scaleFactor: d.scaleFactor,
         });
@@ -126,7 +126,6 @@ function createSelectionWindow() {
     });
 
     ipcMain.once('region-selected', (e, region) => {
-      // Destroy all selection windows
       selectionWindows.forEach(w => {
         if (!w.isDestroyed()) w.destroy();
       });
@@ -152,13 +151,15 @@ function createOverlayWindow(region, recording = true) {
     }
   }
 
-  const margin = 10;
   const primarySF = screen.getPrimaryDisplay().scaleFactor;
+  // 1px inset — see createSelectionWindow for why (avoids Windows fullscreen
+  // optimizations that break dynamic rendering of transparent windows on
+  // the primary monitor).
   const targetBounds = {
-    x: targetDisplay.bounds.x - margin,
-    y: targetDisplay.bounds.y - margin,
-    width: targetDisplay.bounds.width + margin * 2,
-    height: targetDisplay.bounds.height + margin * 2,
+    x: targetDisplay.bounds.x + 1,
+    y: targetDisplay.bounds.y + 1,
+    width: Math.max(100, targetDisplay.bounds.width - 2),
+    height: Math.max(100, targetDisplay.bounds.height - 2),
   };
   const dpiRatio = targetDisplay.scaleFactor / primarySF;
   const initWidth = Math.round(targetBounds.width / dpiRatio);
@@ -177,7 +178,6 @@ function createOverlayWindow(region, recording = true) {
     resizable: false,
     hasShadow: false,
     focusable: false,
-    enableLargerThanScreen: true,
     webPreferences: {
       nodeIntegration: true,
       contextIsolation: false,
@@ -191,17 +191,16 @@ function createOverlayWindow(region, recording = true) {
   overlayWindow.once('ready-to-show', () => {
     overlayWindow.setBounds(targetBounds);
     overlayWindow.show();
-  });
-
-  overlayWindow.webContents.on('did-finish-load', () => {
+    // Use the ACTUAL window origin (Windows may have adjusted it) so the
+    // renderer's toLocal() matches the real window position.
+    const actual = overlayWindow.getBounds();
     overlayWindow.webContents.send('init-overlay', {
       region,
-      winOffset: { x: targetBounds.x, y: targetBounds.y },
+      winOffset: { x: actual.x, y: actual.y },
       displayBounds: targetDisplay.bounds,
       scaleFactor: targetDisplay.scaleFactor,
       recording,
     });
-    // Click-through on transparent areas, forward events for CSS pointer-events
     overlayWindow.setIgnoreMouseEvents(true, { forward: true });
   });
 
@@ -263,17 +262,17 @@ ipcMain.handle('start-monitoring', async (e, config) => {
     createOverlayWindow(region, true);
   }
 
-  // Start monitoring loop
+  // Start monitoring loop. Red border is positioned OUTSIDE the region with
+  // a 2px gap (see overlay.html updatePositions), so screenshots never
+  // include it — no need to hide the overlay during each capture.
   monitoringLoop = new MonitoringLoop(
     region,
     currentSessionDir,
     { interval, thresholdPct, pixelThreshold },
     (filepath) => {
-      // Flash overlay
       if (overlayWindow && !overlayWindow.isDestroyed()) {
         overlayWindow.webContents.send('flash');
       }
-      // Notify main window
       if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('capture', filepath);
       }
