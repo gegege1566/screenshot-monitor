@@ -242,6 +242,13 @@ ipcMain.handle('select-region', async () => {
 });
 
 ipcMain.handle('start-monitoring', async (e, config) => {
+  // Guard against a duplicate start (e.g. a double-click before the UI reacts)
+  // spawning a second MonitoringLoop while the first keeps running unseen.
+  if (monitoringLoop) {
+    monitoringLoop.stop();
+    monitoringLoop = null;
+  }
+
   // Use the latest region if it was updated via overlay drag, otherwise use config
   const region = latestRegion || config.region;
   const { interval, thresholdPct, pixelThreshold } = config;

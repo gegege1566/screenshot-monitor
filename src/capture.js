@@ -89,9 +89,11 @@ class MonitoringLoop {
     this.settings = settings;
     this.onCapture = onCapture;
     this.previousBuf = null;
+    this.pendingBuf = null;
     this.paused = false;
     this.stopped = false;
     this.timer = null;
+    this.capturing = false;
     this.detector = new ChangeDetector(settings.thresholdPct, settings.pixelThreshold);
     this.forceNext = false;
 
@@ -109,10 +111,13 @@ class MonitoringLoop {
     if (this.stopped) return;
 
     if (!this.paused) {
+      this.capturing = true;
       try {
         await this._capture();
       } catch (e) {
         console.error('Capture error:', e);
+      } finally {
+        this.capturing = false;
       }
     }
 
@@ -168,9 +173,31 @@ class MonitoringLoop {
     if (forced) {
       this.forceNext = false;
       this.previousBuf = null;
+      this.pendingBuf = null;
     }
 
-    if (forced || this.detector.hasChanged(cropped, this.previousBuf)) {
+    let shouldSave = forced || !this.previousBuf;
+
+    if (!shouldSave) {
+      if (this.detector.hasChanged(cropped, this.previousBuf)) {
+        // Differs from the last saved frame. Don't save on the first sighting —
+        // a single differing tick is often just a mid-transition frame (animation,
+        // cursor blink, transient capture noise) rather than a real, lasting
+        // change. Only persist once the same new state has held steady across
+        // two consecutive checks, which also collapses a multi-tick transition
+        // into a single saved frame instead of one duplicate-looking image per tick.
+        if (this.pendingBuf && !this.detector.hasChanged(cropped, this.pendingBuf)) {
+          shouldSave = true;
+        } else {
+          this.pendingBuf = cropped;
+        }
+      } else {
+        // Matches the last saved frame again — no longer mid-transition.
+        this.pendingBuf = null;
+      }
+    }
+
+    if (shouldSave) {
       const now = new Date();
       const pad = (n, d = 2) => String(n).padStart(d, '0');
       const ts = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
@@ -185,6 +212,7 @@ class MonitoringLoop {
         .toFile(filepath);
 
       this.previousBuf = cropped;
+      this.pendingBuf = null;
 
       if (this.onCapture) {
         this.onCapture(filepath);
@@ -198,6 +226,16 @@ class MonitoringLoop {
   async forceCapture() {
     if (this.stopped) return;
     this.forceNext = true;
+
+    // A capture is already in flight (mid-await inside _capture()). Starting
+    // a second, concurrent _tick() here would spawn an independent setTimeout
+    // chain that this.timer can no longer reference — an orphaned loop that
+    // keeps running (and saving) forever alongside the original one, since
+    // stop()/clearTimeout only ever reach whichever chain is currently
+    // assigned to this.timer. Just let the in-flight capture pick up
+    // forceNext instead of racing it.
+    if (this.capturing) return;
+
     if (this.timer) {
       clearTimeout(this.timer);
       this.timer = null;
